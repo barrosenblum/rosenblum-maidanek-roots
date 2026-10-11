@@ -88,6 +88,115 @@ ALIAS = {"n_yehudit_gafni": "n_jetti_m", "n_klara": "chaje", "n_moses_lm": "n_mo
 HIDE_REL_KINDS = {"same_as?"}
 RANK = {"confirmed": 0, "partly": 1, "inference": 2, "open": 3, "unchecked": 4,
         "unsourced": 5, "contradicted": 6, "computed": 1}
+
+# ---- rejected/refuted findings: mark unmistakably, don't present as live ----
+_DOC_REJ = re.compile(
+    r"checked and NOT\b|\brejected\b|\bruled out\b|"
+    r"\bneither\b.{0,40}\bis ours\b|\bnot one of the siblings\b|"
+    r"\ba lead, not a sibling\b", re.I)
+
+def _doc_rejected(desc):
+    return bool(desc and _DOC_REJ.search(desc))
+
+_CLAIM_REJ_HEAD = re.compile(
+    r"checked and rejected\b|HYPOTHESIS REJECTED|"
+    r"REJECTED\s*\(do not reopen\)", re.I)
+
+def _claim_rejected(cid, c):
+    if c["st"] == "contradicted":
+        return True
+    if re.search(r"_rejected\b|_withdrawn\b", cid or ""):
+        return True
+    s = c["s"] or ""
+    if "WITHDRAWN" in s:  # uppercase = deliberate editorial marker
+        return True
+    head = s[:120]
+    return bool(_CLAIM_REJ_HEAD.search(head))
+
+# ---- life-event dedup: one row per distinct fact, not one per KB stage ----
+_YR = re.compile(r"\b(1[5-9]\d{2}|20\d{2})\b")
+
+def _ev_years(date_text, year_min):
+    yrs = set()
+    if date_text:
+        for m in _YR.finditer(date_text):
+            yrs.add(m.group(1))
+        # expand 2-digit range ends: "1941-42" -> {1941, 1942}
+        for m in re.finditer(r"\b((?:1[5-9]|20)\d{2})-(\d{2})\b", date_text):
+            base = int(m.group(1))
+            century = (base // 100) * 100
+            end = century + int(m.group(2))
+            if end < base:
+                end += 100
+            for y in range(base, end + 1):
+                yrs.add(str(y))
+    if year_min:
+        yrs.add(str(year_min))
+    return yrs
+
+def _ev_place_norm(place):
+    p = (place or "").lower()
+    p = re.sub(r"[^a-z\u00e0-\u024f\u0370-\u03ff\u0590-\u05ff0-9 ]", " ", p)
+    return re.sub(r"\s+", " ", p).strip()
+
+def _ev_compatible(a, b):
+    """Two raw events describe the same fact: same kind, overlapping
+    year(s) and compatible place. Genuine disagreements (different year or
+    different place) are NOT compatible."""
+    if a["k"] != b["k"]:
+        return False
+    ya, yb = _ev_years(a["d"], a["y"]), _ev_years(b["d"], b["y"])
+    if ya and yb and not (ya & yb):
+        return False
+    pa, pb = _ev_place_norm(a["pl"]), _ev_place_norm(b["pl"])
+    if pa and pb and pa != pb and pa not in pb and pb not in pa:
+        return False
+    if not ya and not yb:
+        na = re.sub(r"\s+", " ", (a["d"] or "").lower()).strip()
+        nb = re.sub(r"\s+", " ", (b["d"] or "").lower()).strip()
+        if na != nb and na not in nb and nb not in na:
+            return False
+    return True
+
+def _dedup_events(raw):
+    # 1. drop exact dupes: same claim recorded twice for the same kind
+    seen_cid, uniq = set(), []
+    for e in raw:
+        if e["c"]:
+            key = (e["k"], e["c"])
+            if key in seen_cid:
+                continue
+            seen_cid.add(key)
+        uniq.append(e)
+    # 2. group compatible (same-fact) events
+    groups = []
+    for e in uniq:
+        for g in groups:
+            if _ev_compatible(g[0], e):
+                g.append(e)
+                break
+        else:
+            groups.append([e])
+    # 3. merge each group: most detailed text wins, citations union
+    def _detail(e):
+        d = e["d"] or ""
+        digits = sum(ch.isdigit() for ch in d)
+        return (digits, len(d))
+    out = []
+    for g in groups:
+        best_d = max(g, key=_detail)
+        best_pl = max(g, key=lambda e: len(e["pl"] or ""))
+        cids = []
+        for e in g:
+            if e["c"] and e["c"] not in cids:
+                cids.append(e["c"])
+        sts = [e["st"] for e in g if e["st"]]
+        worst = max(sts, key=lambda s: RANK.get(s, 9)) if sts else None
+        ys = [e["y"] for e in g if e["y"]]
+        out.append(dict(k=g[0]["k"], d=best_d["d"],
+                        y=min(ys) if ys else None, pl=best_pl["pl"],
+                        cids=cids, st=worst))
+    return out
 BR = {"rosenblum": "Rosenblum", "finkelstein": "Finkelstein", "maidanek": "Maidanek",
       "jurgrau": "Jurgrau", "besner": "Besner", "kurzberg": "Kurzberg",
       "laufer": "Laufer", "rafoul": "Rafoul", "horer": "Horer / Herer", "herer": "Herer"}
@@ -177,17 +286,22 @@ def load_kb():
                                st=r["status"], conf=r["confidence"], o=r["origin"],
                                pt=r["page_text"], note=scrub(neutral(clean(r["note"]))),
                                cit=cit, val=val)
+        claims[r["id"]]["rej"] = _claim_rejected(r["id"], claims[r["id"]])
         if pid in persons:
             persons[pid]["cl"].append(r["id"])
 
+    raw_ev = {}
     for r in c.execute("SELECT * FROM events ORDER BY year_min"):
         pid = ALIAS.get(r["person_id"], r["person_id"])
         if pid not in persons:
             continue
         st = claims.get(r["claim_id"], {}).get("st") if r["claim_id"] else None
-        persons[pid]["ev"].append(dict(k=r["kind"], d=scrub(clean(r["date_text"])),
-                                       y=r["year_min"], pl=scrub(clean(r["place"])),
-                                       c=r["claim_id"], st=st))
+        raw_ev.setdefault(pid, []).append(
+            dict(k=r["kind"], d=scrub(clean(r["date_text"])),
+                 y=r["year_min"], pl=scrub(clean(r["place"])),
+                 c=r["claim_id"], st=st))
+    for pid, raw in raw_ev.items():
+        persons[pid]["ev"] = _dedup_events(raw)
 
     meta = json.load(open(META_SRC, encoding="utf-8"))
     try:
@@ -203,7 +317,8 @@ def load_kb():
         docs[did] = dict(src=r["source_id"], d=scrub(clean(r["description"])),
                          img=bool(m), w=m and m["w"], h=m and m["h"],
                          red=bool(m and m["redacted"]), pp=pp,
-                         web=did.startswith("W"))
+                         web=did.startswith("W"),
+                         rej=_doc_rejected(scrub(clean(r["description"]))))
     for did, d in docs.items():
         for pid in d["pp"]:
             persons[pid]["docs"].append(did)
@@ -413,10 +528,28 @@ def build_data_files(persons, rels, sources, claims, docs, conflicts, leads, pla
             cit = []
             for sid, loc, q in c["cit"]:
                 s = sources.get(sid, {})
-                cit.append(dict(t=s.get("t") or sid, loc=loc, q=q))
+                cit.append(dict(sid=sid, t=s.get("t") or sid, loc=loc, q=q))
             cl.append(dict(id=cid, k=c["k"], s=c["s"], st=c["st"], conf=c["conf"],
-                           note=c["note"], cit=cit))
+                           note=c["note"], cit=cit, rej=c.get("rej", False)))
         cl.sort(key=lambda x: RANK.get(x["st"], 9))
+        # attach deduped source refs to each (merged) life event for evidence links
+        # (resolve via global claims: an event may cite another person's claim)
+        ev = []
+        for e in p["ev"]:
+            srcs, seen_sid = [], set()
+            for cid in e.get("cids", []):
+                gc = claims.get(cid)
+                if not gc:
+                    continue
+                for sid, loc, q in gc["cit"]:
+                    if sid and sid not in seen_sid:
+                        seen_sid.add(sid)
+                        srcs.append([sid, sources.get(sid, {}).get("t") or sid])
+            ev.append(dict(k=e["k"], d=e["d"], y=e["y"], pl=e["pl"],
+                           st=e["st"], src=srcs,
+                           rej=any(_claim_rejected(cid, claims[cid])
+                                   for cid in e.get("cids", [])
+                                   if cid in claims)))
         fam = dict(
             parents=[dict(id=x["id"], en=persons[x["id"]]["en"], st=x["st"])
                      for x in ri.best_parents(pid)],
@@ -432,17 +565,19 @@ def build_data_files(persons, rels, sources, claims, docs, conflicts, leads, pla
         for did in p["docs"]:
             d = docs.get(did)
             if d:
-                dlist.append(dict(id=did, d=d["d"], img=d["img"], red=d["red"]))
+                dlist.append(dict(id=did, d=d["d"], img=d["img"], red=d["red"],
+                                  rej=d.get("rej", False)))
         full[pid] = dict(id=pid, en=p["en"], he=p["he"], sur=p["sur"], sex=p["sex"],
                          br=p["br"], by=p["by"], byn=p["byn"], life=life(p),
-                         notes=p["notes"], ev=p["ev"], fam=fam, cl=cl, docs=dlist)
+                         notes=p["notes"], ev=ev, fam=fam, cl=cl, docs=dlist)
     write_json("people.json", full)
 
     write_json("claims.json", claims)
     write_json("sources.json", sources)
     write_json("documents.json",
                {did: dict(src=d["src"], d=d["d"], img=d["img"], red=d["red"],
-                          web=d["web"], pp=d["pp"]) for did, d in docs.items()})
+                          web=d["web"], pp=d["pp"], rej=d.get("rej", False))
+                for did, d in docs.items()})
     write_json("leads.json", [l for l in leads if l["st"] == "open"])
 
     cur = curated_literals()
