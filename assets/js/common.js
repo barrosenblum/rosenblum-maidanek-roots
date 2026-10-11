@@ -8,6 +8,7 @@ const esc = s => String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"
 const STNAME = {confirmed:"Confirmed",partly:"Partly proven",inference:"Inferred",open:"Open",
   unchecked:"Unchecked",unsourced:"Unsourced",contradicted:"Contradicted",computed:"Computed"};
 const st = s => s ? `<span class="st ${esc(s)}">${esc(STNAME[s]||s)}</span>` : "";
+const rejBadge = r => r ? `<span class="st rejected">Rejected</span>` : "";
 const BR = {rosenblum:"Rosenblum",finkelstein:"Finkelstein",maidanek:"Maidanek",jurgrau:"Jurgrau",
   besner:"Besner",kurzberg:"Kurzberg",laufer:"Laufer",rafoul:"Rafoul",horer:"Horer / Herer",herer:"Herer"};
 const brKey = b => b==="herer" ? "horer" : (b||"");

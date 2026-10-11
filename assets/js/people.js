@@ -37,7 +37,7 @@ function renderList(){
 }
 function claimHTML(c){
   const cit=(c.cit||[]).map(x=>`${esc(x.t)}${x.loc?` <span class="mono">${esc(x.loc)}</span>`:""}${x.q?` — “${esc(x.q)}”`:""}`).join("<br>");
-  return `<div class="claim">${st(c.st)} ${esc(c.s)}
+  return `<div class="claim">${st(c.st)}${rejBadge(c.rej)} ${esc(c.s)}
     ${cit?`<div class="cit">Source: ${cit}</div>`:""}
     ${c.note?`<details><summary>Research note</summary><div>${esc(c.note)}</div></details>`:""}</div>`;
 }
@@ -60,7 +60,7 @@ async function renderDetail(id){
         <h2>${esc(p.en||"(name unknown)")}</h2></div>
       <p class="lede" style="margin-bottom:6px">${p.he?`<span class="he" lang="he">${esc(p.he)}</span> · `:""}${esc(p.life||"")}${p.br?` · ${esc(brName(p.br))} family`:""}</p>
       ${p.notes?`<p>${esc(p.notes)}</p>`:""}
-      ${evs.length?`<h3>Life events</h3><dl class="facts">${evs.map(e=>`<dt>${esc(KIND[e.k]||e.k)}</dt><dd>${esc(e.d||"")}${e.pl?", "+esc(e.pl):""} ${e.st&&e.st!=="confirmed"?st(e.st):""}</dd>`).join("")}</dl>`:""}
+      ${evs.length?`<h3>Life events</h3><dl class="facts">${evs.map(e=>`<dt>${esc(KIND[e.k]||e.k)}</dt><dd>${esc(e.d||"")}${e.pl?", "+esc(e.pl):""} ${e.st&&e.st!=="confirmed"?st(e.st):""}${rejBadge(e.rej)}${e.src&&e.src.length?` <span class="evsrc">Source: ${e.src.map(s=>`<a href="records.html#src-${esc(s[0])}" title="${esc(s[1]||s[0])}">${esc(s[0])}</a>`).join(", ")}</span>`:""}</dd>`).join("")}</dl>`:""}
       ${famRows.length?`<h3>Family</h3><dl class="facts">${famRows.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`:""}
       <h3>Records (${p.docs.filter(d=>d.img).length})</h3>
       ${p.docs.length?`<div class="thumbs">${p.docs.filter(d=>d.img).map(d=>

@@ -645,6 +645,11 @@ footer.site .wrap{display:flex;flex-wrap:wrap;gap:6px 24px;justify-content:space
 .st.confirmed{background:var(--ok-soft);color:var(--ok)} .st.partly{background:var(--warn-soft);color:var(--warn)}
 .st.contradicted{background:var(--bad-soft);color:var(--bad)} .st.open{background:var(--open-soft);color:var(--open)}
 .st.unchecked,.st.computed{background:var(--grey-soft);color:var(--grey)} .st.inference{background:var(--inf-soft);color:var(--inf)}
+.st.rejected{background:var(--bad);color:#fff}
+.evsrc{font-size:.8rem;color:var(--muted)} .evsrc a{color:var(--stamp)}
+tr.hilite td{background:var(--stamp-soft)}
+.rejsec{margin-top:1rem;border:1px solid var(--rule);border-radius:6px;padding:.4rem .8rem;background:var(--card)}
+.rejsec summary{cursor:pointer;font-weight:600;color:var(--muted)}
 .badge{display:inline-block;font-size:.72rem;font-weight:700;padding:1px 7px;border-radius:4px;border:1px solid var(--rule);color:var(--muted)}
 .btn{border:1px solid var(--rule);background:var(--card);border-radius:6px;padding:6px 14px;cursor:pointer;font:inherit}
 .btn:hover{border-color:var(--stamp)}
@@ -735,6 +740,7 @@ const esc = s => String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"
 const STNAME = {confirmed:"Confirmed",partly:"Partly proven",inference:"Inferred",open:"Open",
   unchecked:"Unchecked",unsourced:"Unsourced",contradicted:"Contradicted",computed:"Computed"};
 const st = s => s ? `<span class="st ${esc(s)}">${esc(STNAME[s]||s)}</span>` : "";
+const rejBadge = r => r ? `<span class="st rejected">Rejected</span>` : "";
 const BR = {rosenblum:"Rosenblum",finkelstein:"Finkelstein",maidanek:"Maidanek",jurgrau:"Jurgrau",
   besner:"Besner",kurzberg:"Kurzberg",laufer:"Laufer",rafoul:"Rafoul",horer:"Horer / Herer",herer:"Herer"};
 const brKey = b => b==="herer" ? "horer" : (b||"");
@@ -805,7 +811,7 @@ function renderList(){
 }
 function claimHTML(c){
   const cit=(c.cit||[]).map(x=>`${esc(x.t)}${x.loc?` <span class="mono">${esc(x.loc)}</span>`:""}${x.q?` — “${esc(x.q)}”`:""}`).join("<br>");
-  return `<div class="claim">${st(c.st)} ${esc(c.s)}
+  return `<div class="claim">${st(c.st)}${rejBadge(c.rej)} ${esc(c.s)}
     ${cit?`<div class="cit">Source: ${cit}</div>`:""}
     ${c.note?`<details><summary>Research note</summary><div>${esc(c.note)}</div></details>`:""}</div>`;
 }
@@ -828,7 +834,7 @@ async function renderDetail(id){
         <h2>${esc(p.en||"(name unknown)")}</h2></div>
       <p class="lede" style="margin-bottom:6px">${p.he?`<span class="he" lang="he">${esc(p.he)}</span> · `:""}${esc(p.life||"")}${p.br?` · ${esc(brName(p.br))} family`:""}</p>
       ${p.notes?`<p>${esc(p.notes)}</p>`:""}
-      ${evs.length?`<h3>Life events</h3><dl class="facts">${evs.map(e=>`<dt>${esc(KIND[e.k]||e.k)}</dt><dd>${esc(e.d||"")}${e.pl?", "+esc(e.pl):""} ${e.st&&e.st!=="confirmed"?st(e.st):""}</dd>`).join("")}</dl>`:""}
+      ${evs.length?`<h3>Life events</h3><dl class="facts">${evs.map(e=>`<dt>${esc(KIND[e.k]||e.k)}</dt><dd>${esc(e.d||"")}${e.pl?", "+esc(e.pl):""} ${e.st&&e.st!=="confirmed"?st(e.st):""}${rejBadge(e.rej)}${e.src&&e.src.length?` <span class="evsrc">Source: ${e.src.map(s=>`<a href="records.html#src-${esc(s[0])}" title="${esc(s[1]||s[0])}">${esc(s[0])}</a>`).join(", ")}</span>`:""}</dd>`).join("")}</dl>`:""}
       ${famRows.length?`<h3>Family</h3><dl class="facts">${famRows.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`:""}
       <h3>Records (${p.docs.filter(d=>d.img).length})</h3>
       ${p.docs.length?`<div class="thumbs">${p.docs.filter(d=>d.img).map(d=>
@@ -890,17 +896,23 @@ async function init(){
   const [docs, sources] = await Promise.all([getJSON("data/documents.json"), getJSON("data/sources.json")]);
   const ids=Object.keys(docs).sort();
   const withImg=ids.filter(id=>docs[id].img), noImg=ids.filter(id=>!docs[id].img);
-  document.getElementById("gallery").innerHTML = withImg.map(id=>{const d=docs[id];return `
+  const withImgOk=withImg.filter(id=>!docs[id].rej), withImgRej=withImg.filter(id=>docs[id].rej);
+  const thumbHTML=id=>{const d=docs[id];return `
     <button class="thumb" data-doc="${esc(id)}" title="${esc(d.d||id)}">
       <img loading="lazy" src="assets/images/t/${esc(id)}.jpg" alt="${esc(d.d||id)}" onerror="this.closest('.thumb').style.display='none'">
-      <span><b>${esc(id)}</b> · ${esc((d.d||"").slice(0,80))}</span>
-    </button>`;}).join("");
+      <span>${rejBadge(d.rej)}<b>${esc(id)}</b> · ${esc((d.d||"").slice(0,80))}</span>
+    </button>`;};
+  document.getElementById("gallery").innerHTML = withImgOk.map(thumbHTML).join("")
+    +(withImgRej.length?`<details class="rejsec"><summary>Rejected / ruled out (${withImgRej.length})</summary><div class="thumbs">${withImgRej.map(thumbHTML).join("")}</div></details>`:"");
   document.querySelectorAll("[data-doc]").forEach(b=>b.onclick=()=>openLightbox(b.dataset.doc, docs[b.dataset.doc].d));
-  document.getElementById("noimg-list").innerHTML = noImg.length
-    ? `<h3>Described, image not yet in hand (${noImg.length})</h3><ul>`+
-      noImg.map(id=>`<li><b>${esc(id)}</b> — ${esc(docs[id].d||"")}</li>`).join("")+`</ul>` : "";
+  const noImgOk=noImg.filter(id=>!docs[id].rej), noImgRej=noImg.filter(id=>docs[id].rej);
+  const noImgItem=id=>`<li>${rejBadge(docs[id].rej)}<b>${esc(id)}</b> — ${esc(docs[id].d||"")}</li>`;
+  document.getElementById("noimg-list").innerHTML = (noImgOk.length||noImgRej.length)
+    ? `<h3>Described, image not yet in hand (${noImgOk.length})</h3><ul>`+
+      noImgOk.map(noImgItem).join("")+`</ul>`
+      +(noImgRej.length?`<details class="rejsec"><summary>Rejected / ruled out (${noImgRej.length})</summary><ul>${noImgRej.map(noImgItem).join("")}</ul></details>`:"") : "";
   const sids=Object.keys(sources).sort();
-  const rows=sids.map(id=>{const s=sources[id];return `<tr data-t="${esc(((s.t||"")+" "+(s.repo||"")+" "+(s.ref||"")).toLowerCase())}">
+  const rows=sids.map(id=>{const s=sources[id];return `<tr id="src-${esc(id)}" data-t="${esc(((s.t||"")+" "+(s.repo||"")+" "+(s.ref||"")).toLowerCase())}">
     <td class="mono">${esc(id)}</td><td><b>${esc(s.t||"")}</b>${s.repo?`<br><span style="color:var(--muted)">${esc(s.repo)}</span>`:""}${s.ref?`<br><span class="mono">${esc(s.ref)}</span>`:""}</td>
     <td>${esc(s.kind||"")}</td>
     <td>${s.url?`<a href="${esc(s.url)}" target="_blank" rel="noopener">link</a>`:"—"}</td></tr>`;}).join("");
@@ -913,6 +925,7 @@ async function init(){
       tr.style.display = tr.dataset.t.includes(q)?"":"none";
     });
   });
+  if(location.hash.startsWith("#src-")){const tr=document.getElementById(location.hash.slice(1));if(tr){tr.classList.add("hilite");tr.scrollIntoView({block:"center"});}}
   document.getElementById("counts").textContent = `${withImg.length} record images · ${sids.length} sources`;
 }
 init().catch(e=>{document.getElementById("gallery").innerHTML=`<p class="noimg">Could not load data: ${esc(e.message)}</p>`;});

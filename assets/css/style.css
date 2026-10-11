@@ -47,6 +47,11 @@ footer.site .wrap{display:flex;flex-wrap:wrap;gap:6px 24px;justify-content:space
 .st.confirmed{background:var(--ok-soft);color:var(--ok)} .st.partly{background:var(--warn-soft);color:var(--warn)}
 .st.contradicted{background:var(--bad-soft);color:var(--bad)} .st.open{background:var(--open-soft);color:var(--open)}
 .st.unchecked,.st.computed{background:var(--grey-soft);color:var(--grey)} .st.inference{background:var(--inf-soft);color:var(--inf)}
+.st.rejected{background:var(--bad);color:#fff}
+.evsrc{font-size:.8rem;color:var(--muted)} .evsrc a{color:var(--stamp)}
+tr.hilite td{background:var(--stamp-soft)}
+.rejsec{margin-top:1rem;border:1px solid var(--rule);border-radius:6px;padding:.4rem .8rem;background:var(--card)}
+.rejsec summary{cursor:pointer;font-weight:600;color:var(--muted)}
 .badge{display:inline-block;font-size:.72rem;font-weight:700;padding:1px 7px;border-radius:4px;border:1px solid var(--rule);color:var(--muted)}
 .btn{border:1px solid var(--rule);background:var(--card);border-radius:6px;padding:6px 14px;cursor:pointer;font:inherit}
 .btn:hover{border-color:var(--stamp)}

@@ -13,17 +13,23 @@ async function init(){
   const [docs, sources] = await Promise.all([getJSON("data/documents.json"), getJSON("data/sources.json")]);
   const ids=Object.keys(docs).sort();
   const withImg=ids.filter(id=>docs[id].img), noImg=ids.filter(id=>!docs[id].img);
-  document.getElementById("gallery").innerHTML = withImg.map(id=>{const d=docs[id];return `
+  const withImgOk=withImg.filter(id=>!docs[id].rej), withImgRej=withImg.filter(id=>docs[id].rej);
+  const thumbHTML=id=>{const d=docs[id];return `
     <button class="thumb" data-doc="${esc(id)}" title="${esc(d.d||id)}">
       <img loading="lazy" src="assets/images/t/${esc(id)}.jpg" alt="${esc(d.d||id)}" onerror="this.closest('.thumb').style.display='none'">
-      <span><b>${esc(id)}</b> · ${esc((d.d||"").slice(0,80))}</span>
-    </button>`;}).join("");
+      <span>${rejBadge(d.rej)}<b>${esc(id)}</b> · ${esc((d.d||"").slice(0,80))}</span>
+    </button>`;};
+  document.getElementById("gallery").innerHTML = withImgOk.map(thumbHTML).join("")
+    +(withImgRej.length?`<details class="rejsec"><summary>Rejected / ruled out (${withImgRej.length})</summary><div class="thumbs">${withImgRej.map(thumbHTML).join("")}</div></details>`:"");
   document.querySelectorAll("[data-doc]").forEach(b=>b.onclick=()=>openLightbox(b.dataset.doc, docs[b.dataset.doc].d));
-  document.getElementById("noimg-list").innerHTML = noImg.length
-    ? `<h3>Described, image not yet in hand (${noImg.length})</h3><ul>`+
-      noImg.map(id=>`<li><b>${esc(id)}</b> — ${esc(docs[id].d||"")}</li>`).join("")+`</ul>` : "";
+  const noImgOk=noImg.filter(id=>!docs[id].rej), noImgRej=noImg.filter(id=>docs[id].rej);
+  const noImgItem=id=>`<li>${rejBadge(docs[id].rej)}<b>${esc(id)}</b> — ${esc(docs[id].d||"")}</li>`;
+  document.getElementById("noimg-list").innerHTML = (noImgOk.length||noImgRej.length)
+    ? `<h3>Described, image not yet in hand (${noImgOk.length})</h3><ul>`+
+      noImgOk.map(noImgItem).join("")+`</ul>`
+      +(noImgRej.length?`<details class="rejsec"><summary>Rejected / ruled out (${noImgRej.length})</summary><ul>${noImgRej.map(noImgItem).join("")}</ul></details>`:"") : "";
   const sids=Object.keys(sources).sort();
-  const rows=sids.map(id=>{const s=sources[id];return `<tr data-t="${esc(((s.t||"")+" "+(s.repo||"")+" "+(s.ref||"")).toLowerCase())}">
+  const rows=sids.map(id=>{const s=sources[id];return `<tr id="src-${esc(id)}" data-t="${esc(((s.t||"")+" "+(s.repo||"")+" "+(s.ref||"")).toLowerCase())}">
     <td class="mono">${esc(id)}</td><td><b>${esc(s.t||"")}</b>${s.repo?`<br><span style="color:var(--muted)">${esc(s.repo)}</span>`:""}${s.ref?`<br><span class="mono">${esc(s.ref)}</span>`:""}</td>
     <td>${esc(s.kind||"")}</td>
     <td>${s.url?`<a href="${esc(s.url)}" target="_blank" rel="noopener">link</a>`:"—"}</td></tr>`;}).join("");
@@ -36,6 +42,7 @@ async function init(){
       tr.style.display = tr.dataset.t.includes(q)?"":"none";
     });
   });
+  if(location.hash.startsWith("#src-")){const tr=document.getElementById(location.hash.slice(1));if(tr){tr.classList.add("hilite");tr.scrollIntoView({block:"center"});}}
   document.getElementById("counts").textContent = `${withImg.length} record images · ${sids.length} sources`;
 }
 init().catch(e=>{document.getElementById("gallery").innerHTML=`<p class="noimg">Could not load data: ${esc(e.message)}</p>`;});
